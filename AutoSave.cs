@@ -5,6 +5,7 @@ using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using HarmonyLib;
+using System.Collections;
 
 namespace COM3D2.AutoSave
 {
@@ -12,6 +13,7 @@ namespace COM3D2.AutoSave
     public class AutoSave : BaseUnityPlugin
     {
         internal static ManualLogSource logger;
+        internal static AutoSave instance;
         internal static Slot slot = new();
 
         private static ConfigEntry<bool> enableAutoSave;
@@ -19,8 +21,9 @@ namespace COM3D2.AutoSave
         private static ConfigEntry<int> startingSaveSlot;
         private static ConfigEntry<int> endingSaveSlot;
         private static ConfigEntry<int> lastUsedSlot;
-        private static int currentDay = 0;
         private static bool isNewDay = false;
+
+
 
 
         private void Awake()
@@ -30,22 +33,18 @@ namespace COM3D2.AutoSave
             useMultipleSaveSlots = Config.Bind("Config", "Multiple Save", true, "Save Across multiple save slots, in order");
             startingSaveSlot = Config.Bind("Config", "First Slot", 90, "First AutoSave slot (0 to 99");
             endingSaveSlot = Config.Bind("Config", "Last Slot", 99, "Last AutoSave slot (0 to 99)");
-            lastUsedSlot = Config.Bind("Plugin State", "Last Used Slot", 90, "");
+            lastUsedSlot = Config.Bind("Plugin State", "Last Used Slot", 999, "");
 
 
             //BepinEx Logger
             logger = Logger;
 
+            // 
+            instance = this;
+
             //Harmony
             Harmony.CreateAndPatchAll(typeof(AutoSave));
-        }
 
-        public void Update()
-        {
-        }
-
-        private void Main()
-        {
             // Event Management
             SceneManager.sceneLoaded += OnSceneLoaded;
             useMultipleSaveSlots.SettingChanged += UpdateConfig;
@@ -59,6 +58,12 @@ namespace COM3D2.AutoSave
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode sceneMode)
         {
+            // Init check
+            if (lastUsedSlot.Value == 999 && scene.name == "SceneTitle")
+            {
+                instance.StartCoroutine(InitWarning());
+            }
+
             // Scene 3 is the main desktop scene.
             if (scene.buildIndex == 3)
             {
@@ -70,13 +75,33 @@ namespace COM3D2.AutoSave
             }
         }
 
+        #region Init
+        private static IEnumerator InitWarning()
+        {
+            while (GameMain.Instance.SysDlg.isActiveAndEnabled)
+            {
+                yield return new WaitForSeconds(2f);
+            }
+            GameMain.Instance.SysDlg.Show("Do You want to enable AutoSaves ? \n WARNING: This will use slots 90 to 99 by default.", SystemDialog.TYPE.YES_NO, 
+            delegate { Init(true); },
+            delegate { Init(false); });
+        }
+
+        private static void Init(bool answer)
+        {
+            enableAutoSave.Value = answer;
+            lastUsedSlot.Value = 90;
+            GameMain.Instance.SysDlg.Close();
+        }
+        #endregion
+
+
         // Look for an active schedule button, which only appears during daytime when at your desk
         private static bool CheckIsAtDesktop()
         {
             GameObject scheduleButton = GameObject.Find("Schedule");
 
             bool isDesktop = scheduleButton != null && scheduleButton.active;
-            //logger.LogWarning("At Desktop");
             return isDesktop;
         }
 
@@ -85,7 +110,7 @@ namespace COM3D2.AutoSave
         [HarmonyPatch(typeof(GameMain), nameof(GameMain.OnStartDay))]
         public static void OnStartDayPostfix()
         {
-            logger.LogWarning("It's a new Day!");
+            logger.LogInfo("It's a new Day!");
             isNewDay = true;
         }
 
