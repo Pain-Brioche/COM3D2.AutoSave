@@ -56,12 +56,12 @@ namespace COM3D2.AutoSave
         }
 
 
-        private static void OnSceneLoaded(Scene scene, LoadSceneMode sceneMode)
+        private void OnSceneLoaded(Scene scene, LoadSceneMode sceneMode)
         {
             // Init check
             if (lastUsedSlot.Value == 999 && scene.name == "SceneTitle")
             {
-                instance.StartCoroutine(InitWarning());
+                instance.StartCoroutine(this.InitWarning());
             }
 
             // Scene 3 is the main desktop scene.
@@ -76,15 +76,17 @@ namespace COM3D2.AutoSave
         }
 
         #region Init
-        private static IEnumerator InitWarning()
+        private IEnumerator InitWarning()
         {
+            yield return new WaitForSeconds(3f);
             while (GameMain.Instance.SysDlg.isActiveAndEnabled)
             {
                 yield return new WaitForSeconds(2f);
             }
-            GameMain.Instance.SysDlg.Show("Do You want to enable AutoSaves ? \n WARNING: This will use slots 90 to 99 by default.", SystemDialog.TYPE.YES_NO, 
-            delegate { Init(true); },
-            delegate { Init(false); });
+            GameMain.Instance.SysDlg.Show("Do You want to enable AutoSaves ? \n WARNING: This will use slots 90 to 99 by default.",
+                SystemDialog.TYPE.YES_NO, 
+                delegate { Init(true); },
+                delegate { Init(false); });
         }
 
         private static void Init(bool answer)
@@ -101,7 +103,7 @@ namespace COM3D2.AutoSave
         {
             GameObject scheduleButton = GameObject.Find("Schedule");
 
-            bool isDesktop = scheduleButton != null && scheduleButton.active;
+            bool isDesktop = scheduleButton != null && scheduleButton.activeSelf;
             return isDesktop;
         }
 
@@ -145,7 +147,7 @@ namespace COM3D2.AutoSave
             }
 
 
-            internal void SaveData(string comment = "Autosave")
+            internal void SaveData(string comment = "AutoSave")
             {
                 int slot = GetNext();
 
