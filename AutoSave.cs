@@ -83,7 +83,7 @@ namespace COM3D2.AutoSave
             {
                 yield return new WaitForSeconds(2f);
             }
-            GameMain.Instance.SysDlg.Show("Do You want to enable AutoSaves ? \n WARNING: This will use slots 90 to 99 by default.",
+            GameMain.Instance.SysDlg.Show("Do you want to enable AutoSaves?\nWARNING: This will use slots 90 to 99 by default.",
                 SystemDialog.TYPE.YES_NO, 
                 delegate { Init(true); },
                 delegate { Init(false); });
