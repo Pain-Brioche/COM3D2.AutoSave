@@ -20,20 +20,30 @@ namespace COM3D2.AutoSave
         private static ConfigEntry<bool> useMultipleSaveSlots;
         private static ConfigEntry<int> startingSaveSlot;
         private static ConfigEntry<int> endingSaveSlot;
+
+        private static ConfigEntry<bool> enableAutoLoad;
+
         private static ConfigEntry<int> lastUsedSlot;
-        private static bool isNewDay = false;
+        private static ConfigEntry<bool> isInit;
 
 
+        private bool isNewDay = false;
+        private bool isOverride = false;
 
 
         private void Awake()
         {
             //Config
-            enableAutoSave = Config.Bind("Config", "Enable", false, "Enable AutoSave");
-            useMultipleSaveSlots = Config.Bind("Config", "Multiple Save", true, "Save Across multiple save slots, in order");
-            startingSaveSlot = Config.Bind("Config", "First Slot", 90, "First AutoSave slot (0 to 99");
-            endingSaveSlot = Config.Bind("Config", "Last Slot", 99, "Last AutoSave slot (0 to 99)");
-            lastUsedSlot = Config.Bind("Plugin State", "Last Used Slot", 999, "");
+            //AutoSave
+            enableAutoSave = Config.Bind("AutoSave", "Enable", false, "Enable AutoSave");
+            useMultipleSaveSlots = Config.Bind("AutoSave", "Multiple Save", true, "Save Across multiple save slots, in numerical order");
+            startingSaveSlot = Config.Bind("AutoSave", "First Slot", 90, new ConfigDescription("First AutoSave slot", new AcceptableValueRange<int>(0, 98)));
+            endingSaveSlot = Config.Bind("AutoSave", "Last Slot", 99, new ConfigDescription("Last AutoSave slot", new AcceptableValueRange<int>(1, 99)));
+            //AutoLoad
+            enableAutoLoad = Config.Bind("AutoLoad", "Enable AutoLoad", false, "AutoLoad the latest Save on Game Start, maintain shift to override");
+            //Advanced
+            lastUsedSlot = Config.Bind("Plugin State", "Last Used Slot", 90, new ConfigDescription("", new AcceptableValueRange<int>(0, 99), "Advanced"));
+            isInit = Config.Bind("Plugin State", "isInit", false, new ConfigDescription("Whether or not the plugin has already been ran once", null, "Advanced"));
 
 
             //BepinEx Logger
@@ -45,9 +55,23 @@ namespace COM3D2.AutoSave
             //Harmony
             Harmony.CreateAndPatchAll(typeof(AutoSave));
 
-            // Event Management
+            //Event Management
             SceneManager.sceneLoaded += OnSceneLoaded;
+            if (enableAutoLoad.Value)
+            { 
+                SceneManager.sceneLoaded += AutoLoad; 
+            }
+            if (!isInit.Value)
+            {
+                Init init = new();
+                SceneManager.sceneLoaded += init.OnSceneLoaded; 
+            }            
             useMultipleSaveSlots.SettingChanged += UpdateConfig;
+        }
+
+        private void Update()
+        {
+            isOverride = Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift);
         }
 
         private void UpdateConfig(object sender, EventArgs e)
@@ -58,16 +82,10 @@ namespace COM3D2.AutoSave
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode sceneMode)
         {
-            // Init check
-            if (lastUsedSlot.Value == 999 && scene.name == "SceneTitle")
-            {
-                instance.StartCoroutine(this.InitWarning());
-            }
-
             // Scene 3 is the main desktop scene.
             if (scene.buildIndex == 3)
             {
-                if (isNewDay && enableAutoSave.Value && CheckIsAtDesktop())
+                if (isNewDay && enableAutoSave.Value && IsAtDesktop())
                 {
                     isNewDay = false;
                     slot.SaveData();
@@ -75,31 +93,24 @@ namespace COM3D2.AutoSave
             }
         }
 
-        #region Init
-        private IEnumerator InitWarning()
+        private void AutoLoad(Scene scene, LoadSceneMode sceneMode)
         {
-            yield return new WaitForSeconds(3f);
-            while (GameMain.Instance.SysDlg.isActiveAndEnabled)
+            // scene 15 is the warning screen
+            // loads the game and unsubscribes to the event
+            // overriden is the user press Shift
+            if (scene.buildIndex == 15)
             {
-                yield return new WaitForSeconds(2f);
+                SceneManager.sceneLoaded -= AutoLoad;
+                if (!isOverride)
+                {
+                    slot.LoadLast();
+                }
             }
-            GameMain.Instance.SysDlg.Show("Do you want to enable AutoSaves?\nWARNING: This will use slots 90 to 99 by default.",
-                SystemDialog.TYPE.YES_NO, 
-                delegate { Init(true); },
-                delegate { Init(false); });
         }
-
-        private static void Init(bool answer)
-        {
-            enableAutoSave.Value = answer;
-            lastUsedSlot.Value = 90;
-            GameMain.Instance.SysDlg.Close();
-        }
-        #endregion
 
 
         // Look for an active schedule button, which only appears during daytime when at your desk
-        private static bool CheckIsAtDesktop()
+        private bool IsAtDesktop()
         {
             GameObject scheduleButton = GameObject.Find("Schedule");
 
@@ -113,11 +124,12 @@ namespace COM3D2.AutoSave
         public static void OnStartDayPostfix()
         {
             logger.LogInfo("It's a new Day!");
-            isNewDay = true;
+            instance.isNewDay = true;
         }
 
-
-
+        /// <summary>
+        /// Save slot related operations
+        /// </summary>
         internal class Slot
         {
             internal void Check()
@@ -131,7 +143,7 @@ namespace COM3D2.AutoSave
                 }
             }
 
-            internal int GetNext()
+            private int GetNext()
             {
                 // starting slot will be used if Multiple Save isn't enabled
                 if (!useMultipleSaveSlots.Value) { return startingSaveSlot.Value; }
@@ -146,6 +158,11 @@ namespace COM3D2.AutoSave
                 return slot;
             }
 
+            private int GetLast()
+            {
+                return (int)GameMain.Instance.m_lNewSaveDataNo;
+            }
+
 
             internal void SaveData(string comment = "AutoSave")
             {
@@ -153,6 +170,47 @@ namespace COM3D2.AutoSave
 
                 GameMain.Instance.Serialize(slot, comment);
                 logger.LogMessage($"Autosave completed on slot {slot}");
+            }
+
+            internal void LoadLast()
+            {
+                int lastSlot = GetLast();
+                GameMain.Instance.Deserialize(lastSlot);
+            }
+        }
+
+        /// <summary>
+        /// Everything needed to display the starting warning Dialogue Box
+        /// </summary>
+        internal class Init
+        {
+            internal void OnSceneLoaded(Scene scene, LoadSceneMode sceneMode)
+            {
+                if (scene.name == "SceneTitle")
+                {
+                    instance.StartCoroutine(this.Warning());
+                    SceneManager.sceneLoaded -= OnSceneLoaded;
+                }
+            }
+
+            internal IEnumerator Warning()
+            {
+                yield return new WaitForSeconds(3f);
+                while (GameMain.Instance.SysDlg.isActiveAndEnabled)
+                {
+                    yield return new WaitForSeconds(2f);
+                }
+                GameMain.Instance.SysDlg.Show("Do you want to enable AutoSaves?\nWARNING: This will use slots 90 to 99 by default.",
+                    SystemDialog.TYPE.YES_NO,
+                    delegate { Finish(true); },
+                    delegate { Finish(false); });
+            }
+
+            internal void Finish(bool answer)
+            {
+                enableAutoSave.Value = answer;
+                isInit.Value = true;
+                GameMain.Instance.SysDlg.Close();
             }
         }
     }
