@@ -98,7 +98,7 @@ namespace COM3D2.AutoSave
             // scene 15 is the warning screen
             // loads the game and unsubscribes to the event
             // overriden is the user press Shift
-            if (scene.buildIndex == 15)
+            if (scene.name == "SceneTitle")
             {
                 SceneManager.sceneLoaded -= AutoLoad;
                 if (!isOverride)
